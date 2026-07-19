@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Foundry.Rules;
 
 namespace Foundry.Api.Manifest;
 
@@ -8,6 +9,7 @@ public class ApiManifest
     public string Namespace { get; set; } = string.Empty;
     public List<EndpointConfig> Endpoints { get; set; } = new();
     public List<CustomEndpointConfig> CustomEndpoints { get; set; } = new();
+    public List<WorkflowConfig> Workflows { get; set; } = new();
 }
 
 public class EndpointConfig
