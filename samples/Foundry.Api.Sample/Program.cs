@@ -64,6 +64,9 @@ builder.Services.AddFoundryMongo(options =>
 // Register structured production audit logger sink
 builder.Services.AddSingleton<IAuditSink, ConsoleAuditSink>();
 
+// Register real-time services (this decorates the registered ConsoleAuditSink)
+builder.Services.AddFoundryRealTime();
+
 // Register Database Migrations
 builder.Services.AddSingleton<DatabaseMigration, Migration_V1_Initial>();
 builder.Services.AddSingleton<MigrationRunner>();
@@ -121,6 +124,10 @@ app.MapDocsEndpoint(manifest);
 
 // Map Hot Chocolate GraphQL endpoint
 app.MapGraphQL();
+
+// Enable raw WebSockets and map real-time routes (/realtime/hub, /realtime/sse, /realtime/ws)
+app.UseWebSockets();
+app.MapFoundryRealTime();
 
 app.Run();
 
