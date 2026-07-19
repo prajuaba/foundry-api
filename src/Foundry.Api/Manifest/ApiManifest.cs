@@ -17,6 +17,7 @@ public class EndpointConfig
     public List<string> Methods { get; set; } = new();
     public Dictionary<string, List<string>> Roles { get; set; } = new();
     public Dictionary<string, CachingConfig> Caching { get; set; } = new();
+    public Dictionary<string, List<string>> BusinessRules { get; set; } = new();
 }
 
 public class CachingConfig
@@ -31,4 +32,5 @@ public class CustomEndpointConfig
     public string Method { get; set; } = string.Empty;
     public string RequestType { get; set; } = string.Empty;
     public List<string> Roles { get; set; } = new();
+    public List<string> BusinessRules { get; set; } = new();
 }
