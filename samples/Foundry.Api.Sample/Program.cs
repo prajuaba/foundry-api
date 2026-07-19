@@ -67,6 +67,9 @@ builder.Services.AddSingleton<IAuditSink, ConsoleAuditSink>();
 // Register real-time services (this decorates the registered ConsoleAuditSink)
 builder.Services.AddFoundryRealTime();
 
+// Register business rules engine
+builder.Services.AddFoundryRules();
+
 // Register Database Migrations
 builder.Services.AddSingleton<DatabaseMigration, Migration_V1_Initial>();
 builder.Services.AddSingleton<MigrationRunner>();

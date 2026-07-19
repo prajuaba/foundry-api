@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -6,6 +5,7 @@ using System.Threading.Tasks;
 using FluentValidation;
 using FluentValidation.Results;
 using MediatR;
+using Foundry.Rules;
 
 namespace Foundry.Api.MediatR.Behaviors;
 
@@ -15,33 +15,25 @@ namespace Foundry.Api.MediatR.Behaviors;
 public sealed class BusinessRuleBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
-    private readonly IEnumerable<IBusinessRule<TRequest>> _rules;
+    private readonly IBusinessRuleEngine _ruleEngine;
 
-    public BusinessRuleBehavior(IEnumerable<IBusinessRule<TRequest>> rules)
+    public BusinessRuleBehavior(IBusinessRuleEngine ruleEngine)
     {
-        _rules = rules;
+        _ruleEngine = ruleEngine;
     }
 
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
-        if (_rules.Any())
+        var failures = (await _ruleEngine.EvaluateAsync(request, cancellationToken)).ToList();
+        if (failures.Any())
         {
-            var failures = new List<ValidationFailure>();
-
-            foreach (var rule in _rules)
-            {
-                var result = await rule.ValidateAsync(request, cancellationToken);
-                if (!result.IsPassed)
+            var validationFailures = failures.Select(f =>
+                new ValidationFailure(string.Empty, f.ErrorMessage ?? "Business rule validation failed.")
                 {
-                    // Map rule failure as a ValidationFailure
-                    failures.Add(new ValidationFailure(string.Empty, result.ErrorMessage ?? "Business rule validation failed."));
-                }
-            }
+                    ErrorCode = f.RuleCode
+                });
 
-            if (failures.Any())
-            {
-                throw new ValidationException(failures);
-            }
+            throw new ValidationException(validationFailures);
         }
 
         return await next();

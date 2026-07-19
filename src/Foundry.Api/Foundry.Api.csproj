@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../../foundry-core/src/Foundry.Core/Foundry.Core.csproj" />
+    <ProjectReference Include="..\..\..\foundry-rules\src\Foundry.Rules\Foundry.Rules.csproj" />
   </ItemGroup>
 
   <ItemGroup>
