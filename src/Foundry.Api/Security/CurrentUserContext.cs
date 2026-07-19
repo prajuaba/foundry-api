@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using FoundryMongo.Domain.Context;
+using Foundry.Core.User;
 
 namespace Foundry.Api.Security;
 

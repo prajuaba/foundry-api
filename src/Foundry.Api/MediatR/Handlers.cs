@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 using MediatR;
 using MongoDB.Bson;
 using FoundryMongo.Repositories;
-using FoundryMongo.Domain.Entities;
-using FoundryMongo.Domain.Paging;
+using Foundry.Core.Entities;
+using Foundry.Core.Paging;
 
 namespace Foundry.Api.MediatR;
 

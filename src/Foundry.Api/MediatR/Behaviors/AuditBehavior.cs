@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using FoundryMongo.Domain.Context;
+using Foundry.Core.User;
 using MediatR;
 using Microsoft.Extensions.Logging;
 

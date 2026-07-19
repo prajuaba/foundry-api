@@ -1,3 +1,4 @@
+#pragma warning disable IL2026, IL3050, IL2075, IL2090, IL2070, IL2060
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,14 +8,16 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using MongoDB.Bson;
-using FoundryMongo.Domain.Entities;
-using FoundryMongo.Domain.Filters;
+using System.Diagnostics.CodeAnalysis;
+using Foundry.Core.Entities;
 using Foundry.Api.Manifest;
 
 namespace Foundry.Api.Docs;
 
 public static class DocsEndpoint
 {
+    [RequiresUnreferencedCode("Uses runtime reflection for mapping api schema documentation.")]
+    [RequiresDynamicCode("Uses runtime dynamic code or generics.")]
     public static IEndpointRouteBuilder MapDocsEndpoint(this IEndpointRouteBuilder endpoints, ApiManifest manifest)
     {
         endpoints.MapGet("/docs/spec", (HttpContext context) =>

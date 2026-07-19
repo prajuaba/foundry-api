@@ -1,6 +1,6 @@
 global using MediatR;
 global using MongoDB.Bson;
-global using FoundryMongo.Domain.Entities;
+global using Foundry.Core.Entities;
 
 namespace Foundry.Api.MediatR;
 

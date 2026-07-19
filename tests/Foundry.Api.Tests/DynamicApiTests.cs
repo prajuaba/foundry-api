@@ -15,10 +15,10 @@ using NSubstitute;
 using Xunit;
 using MongoDB.Bson;
 using MongoDB.Driver;
-using FoundryMongo.Domain.Entities;
-using FoundryMongo.Domain.Search;
-using FoundryMongo.Domain.Paging;
-using FoundryMongo.Domain.Context;
+using Foundry.Core.Entities;
+using Foundry.Core.Search;
+using Foundry.Core.Paging;
+using Foundry.Core.User;
 using FoundryMongo.Repositories;
 using Paperclip.OrderingSystem.Domain;
 
@@ -27,6 +27,11 @@ namespace Foundry.Api.Tests;
 public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
+
+    static DynamicApiTests()
+    {
+        Environment.SetEnvironmentVariable("MONGODB_ENCRYPTION_KEY", "12345678901234567890123456789012");
+    }
 
     public DynamicApiTests(WebApplicationFactory<Program> factory)
     {

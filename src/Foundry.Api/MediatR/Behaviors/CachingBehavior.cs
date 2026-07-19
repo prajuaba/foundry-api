@@ -1,3 +1,4 @@
+#pragma warning disable IL2026, IL3050, IL2075, IL2090, IL2070, IL2060
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;

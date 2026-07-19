@@ -2,18 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+#pragma warning disable IL2026, IL3050, IL2075, IL2090, IL2070, IL2060
 using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using MediatR;
 using MongoDB.Bson;
-using FoundryMongo.Domain.Entities;
-using FoundryMongo.Domain.Search;
-using FoundryMongo.Domain.Paging;
+using Foundry.Core.Entities;
+using Foundry.Core.Search;
+using Foundry.Core.Paging;
 using Foundry.Api.Manifest;
 using Foundry.Api.MediatR;
 
@@ -21,6 +24,8 @@ namespace Foundry.Api.Endpoints;
 
 public static class DynamicEndpointRouteBuilder
 {
+    [RequiresUnreferencedCode("Uses runtime reflection for mapping dynamic Minimal API routes.")]
+    [RequiresDynamicCode("Uses runtime dynamic generic instantiations.")]
     public static IEndpointRouteBuilder MapDynamicEndpoints(this IEndpointRouteBuilder endpoints, ApiManifest manifest)
     {
         if (manifest == null || manifest.Endpoints == null) return endpoints;
@@ -197,7 +202,7 @@ public static class DynamicEndpointRouteBuilder
     private static void MapDeleteRoute(IEndpointRouteBuilder endpoints, EndpointConfig config, Type entityType)
     {
         var route = $"{config.Route}/{{id}}";
-        var builder = endpoints.MapDelete(route, async (string id, ISender sender, FoundryMongo.Domain.Context.ICurrentUserContext userContext, HttpContext context) =>
+        var builder = endpoints.MapDelete(route, async (string id, ISender sender, Foundry.Core.User.ICurrentUserContext userContext, HttpContext context) =>
         {
             if (!ObjectId.TryParse(id, out var objectId))
             {
@@ -217,7 +222,7 @@ public static class DynamicEndpointRouteBuilder
             return result ? Results.NoContent() : Results.NotFound();
         });
 
-        ConfigureMetadata(builder, config, "DELETE", entityType, 24);
+        ConfigureMetadata(builder, config, "DELETE", entityType, 204);
     }
 
     private static void MapGetByIdRoute(IEndpointRouteBuilder endpoints, EndpointConfig config, Type entityType)
@@ -253,6 +258,8 @@ public static class DynamicEndpointRouteBuilder
         var route = config.Route;
         var builder = endpoints.MapGet(route, async (HttpContext context, ISender sender) =>
         {
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("DynamicEndpointRouteBuilder");
+
             // Build dynamic Filter Expression based on query parameters
             var filterMethod = typeof(DynamicEndpointRouteBuilder).GetMethod(nameof(BuildFilterExpression), BindingFlags.NonPublic | BindingFlags.Static)!
                 .MakeGenericMethod(entityType);
@@ -279,7 +286,10 @@ public static class DynamicEndpointRouteBuilder
                     options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
                     criteria = JsonSerializer.Deserialize<SearchCriterion[]>(criteriaJson, options);
                 }
-                catch {}
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse search criteria: {Criteria}", criteriaJson);
+                }
             }
 
             var queryType = typeof(FindManyQuery<>).MakeGenericType(entityType);
@@ -330,7 +340,7 @@ public static class DynamicEndpointRouteBuilder
         _ => method
     };
 
-    public static Expression<Func<TEntity, bool>>? BuildFilterExpression<TEntity>(HttpContext context) where TEntity : class
+    public static Expression<Func<TEntity, bool>>? BuildFilterExpression<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TEntity>(HttpContext context) where TEntity : class
     {
         var query = context.Request.Query;
         if (query.Count == 0) return null;
@@ -382,8 +392,9 @@ public static class DynamicEndpointRouteBuilder
                     val = Convert.ChangeType(strVal, prop.PropertyType);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"Failed to parse query parameter '{key}': {ex.Message}");
                 continue;
             }
 
@@ -413,6 +424,8 @@ public static class DynamicEndpointRouteBuilder
             .First(m => m.Name == "Send" && m.IsGenericMethod);
     }
 
+    [RequiresUnreferencedCode("Uses runtime reflection for mapping dynamic handlers.")]
+    [RequiresDynamicCode("Uses runtime dynamic generic instantiations.")]
     public static IServiceCollection AddDynamicHandlers(this IServiceCollection services, ApiManifest manifest)
     {
         if (manifest == null || manifest.Endpoints == null) return services;

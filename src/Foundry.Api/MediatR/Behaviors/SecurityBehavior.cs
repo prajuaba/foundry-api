@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using FoundryMongo.Domain.Context;
+using Foundry.Core.User;
 using Foundry.Api.Manifest;
 
 namespace Foundry.Api.MediatR.Behaviors;
@@ -39,6 +39,11 @@ public class SecurityBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest,
         // If HttpContext is null, we are likely running in a test or background job where HTTP security context isn't set up.
         if (httpContext == null)
         {
+            _logger.LogWarning(
+                "SecurityBehavior: No HttpContext available for {RequestType}. " +
+                "Security checks skipped. This is expected for background jobs " +
+                "but may indicate misconfiguration for HTTP requests.",
+                typeof(TRequest).Name);
             return await next();
         }
 

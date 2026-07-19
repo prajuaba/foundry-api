@@ -1,3 +1,4 @@
+#pragma warning disable IL2026, IL3050, IL2075, IL2090, IL2070, IL2060
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,7 +12,8 @@ using HotChocolate.Resolvers;
 using MediatR;
 using MongoDB.Bson;
 using MongoDB.Driver;
-using FoundryMongo.Domain.Entities;
+using System.Diagnostics.CodeAnalysis;
+using Foundry.Core.Entities;
 using FoundryMongo.Repositories;
 using Foundry.Api.Manifest;
 using Foundry.Api.MediatR;
@@ -20,6 +22,8 @@ namespace Foundry.Api.GraphQL;
 
 public static class GraphQLConfiguration
 {
+    [RequiresUnreferencedCode("Uses runtime reflection to register dynamic GraphQL schemas.")]
+    [RequiresDynamicCode("Uses runtime dynamic code or generics.")]
     public static IServiceCollection AddDynamicGraphQL(this IServiceCollection services, ApiManifest manifest)
     {
         if (manifest == null) return services;
@@ -180,7 +184,7 @@ public static class GraphQLMutationHelper<TEntity> where TEntity : class, IEntit
         var sender = context.Service<ISender>();
         if (!ObjectId.TryParse(id, out var objectId)) throw new ArgumentException("Invalid ID");
 
-        var userContext = context.Service<FoundryMongo.Domain.Context.ICurrentUserContext>();
+        var userContext = context.Service<Foundry.Core.User.ICurrentUserContext>();
         var operatorId = userContext.OperatorId ?? "anonymous";
 
         return await sender.Send(new DeleteCommand<TEntity>(objectId, operatorId), context.RequestAborted);

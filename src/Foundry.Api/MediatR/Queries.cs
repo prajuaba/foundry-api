@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using MediatR;
 using Foundry.Api.MediatR;
-using FoundryMongo.Domain.Search;
-using FoundryMongo.Domain.Paging;
+using Foundry.Core.Search;
+using Foundry.Core.Paging;
 
 namespace Foundry.Api.MediatR;
 

@@ -145,7 +145,7 @@ namespace Foundry.Api.SourceGenerators
             sb.AppendLine("using MediatR;");
             sb.AppendLine("using System.Collections.Generic;");
             sb.AppendLine("using MongoDB.Bson;");
-            sb.AppendLine("using FoundryMongo.Domain.Paging;");
+            sb.AppendLine("using Foundry.Core.Paging;");
             sb.AppendLine("using Foundry.Api.MediatR;");
             sb.AppendLine();
             sb.AppendLine("namespace Foundry.Api.Endpoints;");
@@ -189,7 +189,7 @@ namespace Foundry.Api.SourceGenerators
             sb.AppendLine("using MongoDB.Bson;");
             sb.AppendLine("using Foundry.Api.Manifest;");
             sb.AppendLine("using Foundry.Api.MediatR;");
-            sb.AppendLine("using FoundryMongo.Domain.Search;");
+            sb.AppendLine("using Foundry.Core.Search;");
             sb.AppendLine();
             sb.AppendLine("namespace Foundry.Api.Endpoints;");
             sb.AppendLine();
@@ -232,7 +232,7 @@ namespace Foundry.Api.SourceGenerators
                     }
                     else if (method.Equals("DELETE", StringComparison.OrdinalIgnoreCase))
                     {
-                        sb.AppendLine($"            var builderDelete = endpoints.MapDelete(\"{ep.Route}/{{id}}\", async (string id, HttpContext context, ISender sender, FoundryMongo.Domain.Context.ICurrentUserContext userContext) =>");
+                        sb.AppendLine($"            var builderDelete = endpoints.MapDelete(\"{ep.Route}/{{id}}\", async (string id, HttpContext context, ISender sender, Foundry.Core.User.ICurrentUserContext userContext) =>");
                         sb.AppendLine("            {");
                         sb.AppendLine("                if (!ObjectId.TryParse(id, out var objectId)) return Results.BadRequest(\"Invalid ObjectId.\");");
                         sb.AppendLine($"                var command = new DeleteCommand<{fullEntityType}>(objectId, userContext.OperatorId ?? string.Empty);");
@@ -259,7 +259,7 @@ namespace Foundry.Api.SourceGenerators
                         sb.AppendLine("                var sortBy = context.Request.Query[\"sortBy\"].ToString();");
                         sb.AppendLine("                var limitStr = context.Request.Query[\"limit\"].ToString();");
                         sb.AppendLine("                var limit = int.TryParse(limitStr, out var parsedLimit) ? parsedLimit : 100;");
-                        sb.AppendLine("                var sortOrder = string.Equals(context.Request.Query[\"sortOrder\"].ToString(), \"asc\", System.StringComparison.OrdinalIgnoreCase) || string.Equals(context.Request.Query[\"sortOrder\"].ToString(), \"ascending\", System.StringComparison.OrdinalIgnoreCase) ? FoundryMongo.Domain.Paging.SortOrder.Ascending : FoundryMongo.Domain.Paging.SortOrder.Descending;");
+                        sb.AppendLine("                var sortOrder = string.Equals(context.Request.Query[\"sortOrder\"].ToString(), \"asc\", System.StringComparison.OrdinalIgnoreCase) || string.Equals(context.Request.Query[\"sortOrder\"].ToString(), \"ascending\", System.StringComparison.OrdinalIgnoreCase) ? Foundry.Core.Paging.SortOrder.Ascending : Foundry.Core.Paging.SortOrder.Descending;");
                         sb.AppendLine();
                         sb.AppendLine("                // Advanced Criteria Support");
                         sb.AppendLine("                var criteriaJson = context.Request.Query[\"criteria\"].ToString();");

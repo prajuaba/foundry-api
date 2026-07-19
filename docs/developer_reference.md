@@ -38,8 +38,9 @@ All dynamic routing requests dispatch through a unified MediatR CQRS pipeline. T
 sequenceDiagram
     Caller->>MediatR: Dispatch Request
     MediatR->>SecurityBehavior: Validate RBAC roles
-    SecurityBehavior->>ValidationBehavior: Check validation rules
-    ValidationBehavior->>CachingBehavior: Read cache (L1/L2)?
+    SecurityBehavior->>ValidationBehavior: Stage 1: Check validation rules
+    ValidationBehavior->>BusinessRuleBehavior: Stage 2: Verify business rules
+    BusinessRuleBehavior->>CachingBehavior: Read cache (L1/L2)?
     alt Cache Hit
         CachingBehavior-->>Caller: Return Cached Data
     else Cache Miss
@@ -54,15 +55,20 @@ sequenceDiagram
 - Resolves caller claims from the registered `ICurrentUserContext`.
 - Compares claims against allowed RBAC roles configured in the manifest metadata. If unauthorized, returns a `403 Forbidden` response.
 
-### B. Validation Execution (`ValidationBehavior`)
-- Scans registered FluentValidation `IValidator<T>` rules matching request models.
+### B. Structural Validation (`ValidationBehavior`)
+- Scans registered FluentValidation `IValidator<T>` rules and DataAnnotations matching request models (Stage 1 validation).
 - Halts execution and returns a structured validation error payload (HTTP 400) if checks fail.
 
-### C. Cache Orchestration (`CachingBehavior`)
+### C. Business Rules Validation (`BusinessRuleBehavior`)
+- Executes asynchronous domain rules (`IBusinessRule<TRequest>`) registered for the command request (Stage 2 validation).
+- Performs database-dependent validation (like uniqueness checks, state machine transition validity).
+- Throws validation exceptions matching the FluentValidation format for consistent HTTP mapping.
+
+### D. Cache Orchestration (`CachingBehavior`)
 - Utilizes L1 (In-Memory) and L2 (Distributed Cache e.g. Redis) caches for query endpoints.
 - Evicts keys matching affected collections upon command mutations (Insert, Update, Delete) to guarantee consistency.
 
-### D. Audit Trail Telemetry (`AuditBehavior`)
+### E. Audit Trail Telemetry (`AuditBehavior`)
 - Post-execution wrapper capturing transaction outcomes.
 - Invokes registered `IAuditSink` (e.g., `ConsoleAuditSink`) to output structured JSON mutation records.
 

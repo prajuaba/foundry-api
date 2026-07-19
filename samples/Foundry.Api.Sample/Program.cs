@@ -7,8 +7,8 @@ using Microsoft.Extensions.Hosting;
 using MediatR;
 using FluentValidation;
 using FoundryMongo.DependencyInjection;
-using FoundryMongo.Domain.Audit;
-using FoundryMongo.Domain.Context;
+using Foundry.Core.Audit;
+using Foundry.Core.User;
 using Foundry.Api.Manifest;
 using Foundry.Api.Endpoints;
 using Foundry.Api.GraphQL;
@@ -47,7 +47,9 @@ var mongoDatabaseName = Environment.GetEnvironmentVariable("MONGODB_DATABASE")
 
 var encryptionKeyRaw = Environment.GetEnvironmentVariable("MONGODB_ENCRYPTION_KEY") 
     ?? builder.Configuration["MongoDbSettings:EncryptionKey"] 
-    ?? "12345678901234567890123456789012"; // Default 32-byte key for local development
+    ?? throw new InvalidOperationException(
+        "FOUNDRY_ENCRYPTION_KEY is required. Set the MONGODB_ENCRYPTION_KEY environment variable " +
+        "or configure MongoDbSettings:EncryptionKey with a 32-character encryption key for AES-256.");
 
 var encryptionKeyBytes = System.Text.Encoding.UTF8.GetBytes(encryptionKeyRaw.PadRight(32).Substring(0, 32));
 
@@ -87,6 +89,7 @@ builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditBehavior
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(SecurityBehavior<,>));
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CachingBehavior<,>));
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(BusinessRuleBehavior<,>));
 
 // Register dynamic GraphQL
 builder.Services.AddDynamicGraphQL(manifest);
