@@ -11,6 +11,7 @@ using MediatR;
 using Foundry.Rules;
 using Foundry.Api.Manifest;
 using Foundry.Core.User;
+using Foundry.Core.Entities;
 using FoundryMongo.Repositories;
 using Paperclip.OrderingSystem.Domain; // Target entity types
 
@@ -108,6 +109,112 @@ public class WorkflowEngineTests
         Assert.True(detail.Success);
         Assert.Equal(200, detail.StatusCode);
         await mockSender.Received(1).Send(Arg.Is<object>(c => c is DummyCommand && ((DummyCommand)c).Id == "Order-123"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_WithChoiceNodeDecisionGate_RoutesDynamically()
+    {
+        // Arrange
+        var mockServiceProvider = Substitute.For<IServiceProvider>();
+        
+        // 1. Stub ApiManifest
+        var manifest = new ApiManifest
+        {
+            Workflows = new List<WorkflowConfig>
+            {
+                new()
+                {
+                    Id = "wf-1",
+                    Entity = "TestWorkflowStatefulEntity",
+                    IsActive = true,
+                    States = new List<WorkflowStateConfig>
+                    {
+                        new() { Name = "Draft", IsInitial = true },
+                        new() { Name = "Approved" },
+                        new() { Name = "PendingManagerApproval" }
+                    },
+                    Transitions = new List<WorkflowTransitionConfig>
+                    {
+                        new()
+                        {
+                            Id = "submit",
+                            FromState = "Draft",
+                            ToState = "check_amount_choice"
+                        }
+                    },
+                    ChoiceNodes = new List<WorkflowChoiceNodeConfig>
+                    {
+                        new()
+                        {
+                            Id = "check_amount_choice",
+                            DefaultState = "Approved",
+                            Branches = new List<WorkflowChoiceBranchConfig>
+                            {
+                                new()
+                                {
+                                    ToState = "PendingManagerApproval",
+                                    Conditions = new List<WorkflowConditionConfig>
+                                    {
+                                        new() { Property = "TotalAmount", Operator = "GreaterThan", Value = "1000" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        mockServiceProvider.GetService(manifest.GetType()).Returns(manifest);
+
+        // 2. Stub Entity Repository
+        var order = new TestWorkflowStatefulEntity
+        {
+            Id = ObjectId.GenerateNewId(),
+            OrderNumber = "ORD-TEST-123",
+            CurrentState = "Draft"
+        };
+        var mockRepo = Substitute.For<IRepository<TestWorkflowStatefulEntity>>();
+        mockRepo.GetByIdAsync(Arg.Any<MongoDB.Bson.ObjectId>(), Arg.Any<MongoDB.Driver.IClientSessionHandle?>(), Arg.Any<CancellationToken>()).Returns(order);
+        
+        mockServiceProvider.GetService(typeof(IRepository<TestWorkflowStatefulEntity>)).Returns(mockRepo);
+
+        // 3. Stub engine
+        var mockEngine = Substitute.For<IWorkflowEngine>();
+        mockEngine.EvaluateCondition("TotalAmount", "GreaterThan", "1000", Arg.Any<object>()).Returns(true);
+
+        var behavior = new WorkflowTransitionBehavior<SubmitOrderTransition, Unit>(mockServiceProvider, mockEngine);
+        var request = new SubmitOrderTransition { EntityId = ObjectId.GenerateNewId().ToString() };
+
+        // Act
+        var nextCalled = false;
+        await behavior.Handle(request, () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(Unit.Value);
+        }, CancellationToken.None);
+
+        // Assert
+        Assert.True(nextCalled);
+        Assert.Equal("PendingManagerApproval", order.CurrentState); // Routed dynamically!
+        await mockRepo.Received(1).UpdateAsync(order, Arg.Any<MongoDB.Driver.IClientSessionHandle?>(), Arg.Any<CancellationToken>());
+    }
+
+    public record SubmitOrderTransition : IRequest<Unit>, IWorkflowTransitionRequest
+    {
+        public string EntityId { get; init; } = string.Empty;
+        public string EntityType => "TestWorkflowStatefulEntity";
+        public string TransitionId => "submit";
+        public string FromState => "Draft";
+        public string ToState => "check_amount_choice";
+    }
+
+    public record TestWorkflowStatefulEntity : BaseEntity<ObjectId>, IWorkflowStateful
+    {
+        public required string OrderNumber { get; init; }
+        public string CurrentState { get; set; } = string.Empty;
+        public string WorkflowId { get; set; } = string.Empty;
+        public string WorkflowVersion { get; set; } = string.Empty;
     }
 
     private class DictionaryRequestSource
