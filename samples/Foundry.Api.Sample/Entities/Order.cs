@@ -1,7 +1,6 @@
 using System;
 using MongoDB.Bson;
 using Foundry.Core.Entities;
-using Foundry.Core.Entities;
 
 namespace Paperclip.OrderingSystem.Domain;
 

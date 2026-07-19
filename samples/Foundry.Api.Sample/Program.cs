@@ -111,6 +111,41 @@ using (var scope = app.Services.CreateScope())
 {
     var runner = scope.ServiceProvider.GetRequiredService<MigrationRunner>();
     await runner.RunPendingAsync(CancellationToken.None);
+
+    // Skip dynamic index creation if running within test execution context
+    var isTesting = AppDomain.CurrentDomain.GetAssemblies().Any(a => 
+        a.FullName?.Contains("xunit", StringComparison.OrdinalIgnoreCase) == true ||
+        a.FullName?.Contains("Microsoft.TestPlatform", StringComparison.OrdinalIgnoreCase) == true);
+
+    if (!isTesting)
+    {
+        // Auto-create MongoDB indexes for manifest entities
+        var allTypes = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a => {
+                try { return a.GetTypes(); } catch { return Array.Empty<Type>(); }
+            })
+            .ToList();
+
+        foreach (var ep in manifest.Endpoints)
+        {
+            var entityTypeName = $"{manifest.Namespace}.{ep.Entity}";
+            var entityType = allTypes.FirstOrDefault(t => t.FullName?.Equals(entityTypeName, StringComparison.OrdinalIgnoreCase) == true);
+            if (entityType != null)
+            {
+                var repoType = typeof(FoundryMongo.Repositories.IRepository<>).MakeGenericType(entityType);
+                var repo = scope.ServiceProvider.GetService(repoType);
+                if (repo != null)
+                {
+                    var createIndexesMethod = repoType.GetMethod(nameof(FoundryMongo.Repositories.IRepository<Foundry.Core.Entities.IEntity<MongoDB.Bson.ObjectId>>.CreateIndexesAsync));
+                    if (createIndexesMethod != null)
+                    {
+                        Console.WriteLine($"[Startup] Provisioning MongoDB indexes for: {ep.Entity}...");
+                        await (Task)createIndexesMethod.Invoke(repo, new object[] { CancellationToken.None })!;
+                    }
+                }
+            }
+        }
+    }
 }
 
 app.UseExceptionHandler();
