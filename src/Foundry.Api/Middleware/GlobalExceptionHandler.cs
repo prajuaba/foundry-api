@@ -34,6 +34,25 @@ public class GlobalExceptionHandler : IExceptionHandler
             return true;
         }
 
+        if (exception is IdempotencyException idempEx)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
+            httpContext.Response.ContentType = "application/json";
+
+            var problemDetails = new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Idempotency Conflict",
+                Detail = idempEx.Message,
+                Instance = httpContext.Request.Path
+            };
+            problemDetails.Extensions["idempotencyKey"] = idempEx.IdempotencyKey;
+
+            var json = JsonSerializer.Serialize(problemDetails);
+            await httpContext.Response.WriteAsync(json, cancellationToken);
+            return true;
+        }
+
         if (exception is UnauthorizedAccessException unauthEx)
         {
             httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;

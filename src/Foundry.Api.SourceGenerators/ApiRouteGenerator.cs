@@ -121,6 +121,10 @@ namespace Foundry.Api.SourceGenerators
                 // Generate static endpoint mappings
                 var endpointsCode = GenerateEndpointsCode(ns, endpoints, customEndpoints);
                 context.AddSource("GeneratedEndpoints.g.cs", SourceText.From(endpointsCode, Encoding.UTF8));
+
+                // Generate compile-time filter expression builders
+                var filterBuildersCode = GenerateFilterBuildersCode(context.Compilation, ns, endpoints);
+                context.AddSource("GeneratedFilterBuilders.g.cs", SourceText.From(filterBuildersCode, Encoding.UTF8));
             }
             catch (Exception ex)
             {
@@ -273,7 +277,7 @@ namespace Foundry.Api.SourceGenerators
                         sb.AppendLine("                    } catch {}");
                         sb.AppendLine("                }");
                         sb.AppendLine();
-                        sb.AppendLine($"                var filterExpr = DynamicEndpointRouteBuilder.BuildFilterExpression<{fullEntityType}>(context);");
+                        sb.AppendLine($"                var filterExpr = GeneratedFilterBuilders.BuildFilterExpression<{fullEntityType}>(context) ?? DynamicEndpointRouteBuilder.BuildFilterExpression<{fullEntityType}>(context);");
                         sb.AppendLine($"                var query = new FindManyQuery<{fullEntityType}>(filterExpr, sortBy, sortOrder, limit, criteria);");
                         sb.AppendLine("                var result = await sender.Send(query, context.RequestAborted);");
                         sb.AppendLine("                return Results.Text(JsonSerializer.Serialize(result), \"application/json\");");
@@ -410,6 +414,138 @@ namespace Foundry.Api.SourceGenerators
             }
             return list;
         }
+
+    private string GenerateFilterBuildersCode(Compilation compilation, string ns, List<GeneratedEndpoint> endpoints)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Linq;");
+        sb.AppendLine("using System.Linq.Expressions;");
+        sb.AppendLine("using Microsoft.AspNetCore.Http;");
+        sb.AppendLine("using MongoDB.Bson;");
+        sb.AppendLine();
+        sb.AppendLine("namespace Foundry.Api.Endpoints;");
+        sb.AppendLine();
+        sb.AppendLine("public static class GeneratedFilterBuilders");
+        sb.AppendLine("{");
+        sb.AppendLine("    public static Expression<Func<T, bool>>? BuildFilterExpression<T>(HttpContext context) where T : class");
+        sb.AppendLine("    {");
+        foreach (var ep in endpoints)
+        {
+            var fullEntityType = $"{ns}.{ep.Entity}";
+            sb.AppendLine($"        if (typeof(T) == typeof({fullEntityType}))");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            return (Expression<Func<T, bool>>?)(object?)Build_{ep.Entity}_Filter(context);");
+            sb.AppendLine("        }");
+        }
+        sb.AppendLine("        return null;");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+
+        foreach (var ep in endpoints)
+        {
+            var fullEntityType = $"{ns}.{ep.Entity}";
+            sb.AppendLine($"    private static Expression<Func<{fullEntityType}, bool>>? Build_{ep.Entity}_Filter(HttpContext context)");
+            sb.AppendLine("    {");
+            sb.AppendLine("        var query = context.Request.Query;");
+            sb.AppendLine("        if (query.Count == 0) return null;");
+            sb.AppendLine();
+            sb.AppendLine($"        var parameter = Expression.Parameter(typeof({fullEntityType}), \"x\");");
+            sb.AppendLine("        Expression? body = null;");
+            sb.AppendLine();
+
+            var typeSymbol = compilation.GetTypeByMetadataName(fullEntityType);
+            if (typeSymbol != null)
+            {
+                var properties = typeSymbol.GetMembers()
+                    .OfType<IPropertySymbol>()
+                    .Where(p => p.DeclaredAccessibility == Accessibility.Public && !p.IsStatic && !p.IsWriteOnly);
+
+                foreach (var prop in properties)
+                {
+                    var propName = prop.Name;
+                    var propTypeStr = prop.Type.ToDisplayString();
+
+                    if (propName == "Id" || propName == "CreatedAtUtc" || propName == "UpdatedAtUtc" || propName == "Version" || propName == "IsDeleted")
+                        continue;
+
+                    sb.AppendLine($"        if (query.TryGetValue(\"{propName}\", out var val_{propName}))");
+                    sb.AppendLine("        {");
+                    sb.AppendLine($"            var stringVal = val_{propName}.ToString();");
+
+                    if (propTypeStr == "string" || propTypeStr == "System.String")
+                    {
+                        sb.AppendLine($"            var propExpr = Expression.Property(parameter, \"{propName}\");");
+                        sb.AppendLine($"            var valExpr = Expression.Constant(stringVal, typeof(string));");
+                        sb.AppendLine("            var eqExpr = Expression.Equal(propExpr, valExpr);");
+                        sb.AppendLine("            body = body == null ? eqExpr : Expression.AndAlso(body, eqExpr);");
+                    }
+                    else if (propTypeStr == "MongoDB.Bson.ObjectId" || propTypeStr == "ObjectId")
+                    {
+                        sb.AppendLine($"            if (MongoDB.Bson.ObjectId.TryParse(stringVal, out var parsed_{propName}))");
+                        sb.AppendLine("            {");
+                        sb.AppendLine($"                var propExpr = Expression.Property(parameter, \"{propName}\");");
+                        sb.AppendLine($"                var valExpr = Expression.Constant(parsed_{propName}, typeof(MongoDB.Bson.ObjectId));");
+                        sb.AppendLine("                var eqExpr = Expression.Equal(propExpr, valExpr);");
+                        sb.AppendLine("                body = body == null ? eqExpr : Expression.AndAlso(body, eqExpr);");
+                        sb.AppendLine("            }");
+                    }
+                    else if (propTypeStr == "int" || propTypeStr == "System.Int32")
+                    {
+                        sb.AppendLine($"            if (int.TryParse(stringVal, out var parsed_{propName}))");
+                        sb.AppendLine("            {");
+                        sb.AppendLine($"                var propExpr = Expression.Property(parameter, \"{propName}\");");
+                        sb.AppendLine($"                var valExpr = Expression.Constant(parsed_{propName}, typeof(int));");
+                        sb.AppendLine("                var eqExpr = Expression.Equal(propExpr, valExpr);");
+                        sb.AppendLine("                body = body == null ? eqExpr : Expression.AndAlso(body, eqExpr);");
+                        sb.AppendLine("            }");
+                    }
+                    else if (propTypeStr == "decimal" || propTypeStr == "System.Decimal")
+                    {
+                        sb.AppendLine($"            if (decimal.TryParse(stringVal, out var parsed_{propName}))");
+                        sb.AppendLine("            {");
+                        sb.AppendLine($"                var propExpr = Expression.Property(parameter, \"{propName}\");");
+                        sb.AppendLine($"                var valExpr = Expression.Constant(parsed_{propName}, typeof(decimal));");
+                        sb.AppendLine("                var eqExpr = Expression.Equal(propExpr, valExpr);");
+                        sb.AppendLine("                body = body == null ? eqExpr : Expression.AndAlso(body, eqExpr);");
+                        sb.AppendLine("            }");
+                    }
+                    else if (propTypeStr == "bool" || propTypeStr == "System.Boolean")
+                    {
+                        sb.AppendLine($"            if (bool.TryParse(stringVal, out var parsed_{propName}))");
+                        sb.AppendLine("            {");
+                        sb.AppendLine($"                var propExpr = Expression.Property(parameter, \"{propName}\");");
+                        sb.AppendLine($"                var valExpr = Expression.Constant(parsed_{propName}, typeof(bool));");
+                        sb.AppendLine("                var eqExpr = Expression.Equal(propExpr, valExpr);");
+                        sb.AppendLine("                body = body == null ? eqExpr : Expression.AndAlso(body, eqExpr);");
+                        sb.AppendLine("            }");
+                    }
+                    else if (prop.Type.TypeKind == TypeKind.Enum)
+                    {
+                        sb.AppendLine($"            if (Enum.TryParse<{propTypeStr}>(stringVal, true, out var parsed_{propName}))");
+                        sb.AppendLine("            {");
+                        sb.AppendLine($"                var propExpr = Expression.Property(parameter, \"{propName}\");");
+                        sb.AppendLine($"                var valExpr = Expression.Constant(parsed_{propName}, typeof({propTypeStr}));");
+                        sb.AppendLine("                var eqExpr = Expression.Equal(propExpr, valExpr);");
+                        sb.AppendLine("                body = body == null ? eqExpr : Expression.AndAlso(body, eqExpr);");
+                        sb.AppendLine("            }");
+                    }
+                    sb.AppendLine("        }");
+                }
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("        if (body == null) return null;");
+            sb.AppendLine($"        return Expression.Lambda<Func<{fullEntityType}, bool>>(body, parameter);");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
     }
 
     internal class GeneratedEndpoint
