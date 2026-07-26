@@ -53,6 +53,29 @@ public class GlobalExceptionHandler : IExceptionHandler
             return true;
         }
 
+        // A write that lost an optimistic-concurrency race is a client-resolvable conflict, not a
+        // server fault. Unmapped it surfaced as a 500, which tells a client nothing actionable —
+        // 409 plus the entity id lets them re-read, merge and retry.
+        if (exception is Foundry.Core.Entities.ConcurrencyException concurrencyEx)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
+            httpContext.Response.ContentType = "application/json";
+
+            var problemDetails = new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Concurrency Conflict",
+                Detail = concurrencyEx.Message,
+                Instance = httpContext.Request.Path
+            };
+            problemDetails.Extensions["entityId"] = concurrencyEx.EntityId;
+            problemDetails.Extensions["collection"] = concurrencyEx.CollectionName;
+
+            var json = JsonSerializer.Serialize(problemDetails);
+            await httpContext.Response.WriteAsync(json, cancellationToken);
+            return true;
+        }
+
         if (exception is UnauthorizedAccessException unauthEx)
         {
             httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;

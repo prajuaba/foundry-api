@@ -312,9 +312,11 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
             fetched with { TotalAmount = 30m, Version = staleVersion },
             Foundry.Core.Serialization.FoundryJsonDefaults.Options);
 
-        Assert.False(
-            secondUpdate.IsSuccessStatusCode,
-            $"A stale version was accepted (HTTP {(int)secondUpdate.StatusCode}); optimistic concurrency is not being enforced.");
+        Assert.Equal(HttpStatusCode.Conflict, secondUpdate.StatusCode);
+
+        // The conflict body must carry enough for a client to re-read and retry.
+        var problem = await secondUpdate.Content.ReadAsStringAsync();
+        Assert.Contains(orderId.ToString(), problem, StringComparison.Ordinal);
     }
 
     [Fact]
