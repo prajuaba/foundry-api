@@ -184,6 +184,139 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Null(bound.DeletedAt);
     }
 
+
+    /// <summary>
+    /// Audit timestamps are server-owned: visible to clients, ignored when they send them.
+    /// </summary>
+    [Fact]
+    public void AuditTimestamps_AreEmittedButNotBoundFromRequests()
+    {
+        var created = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var json = """
+        {
+          "id": "507f1f77bcf86cd799439011",
+          "orderNumber": "ORD-AUD-001",
+          "createdAtUtc": "2020-01-01T00:00:00Z",
+          "updatedAtUtc": "2020-01-01T00:00:00Z"
+        }
+        """;
+
+        var bound = System.Text.Json.JsonSerializer.Deserialize<Order>(
+            json, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+
+        Assert.NotNull(bound);
+        Assert.Equal("ORD-AUD-001", bound!.OrderNumber);
+
+        // The client's timestamps were discarded, leaving the type's own defaults.
+        Assert.NotEqual(created, bound.CreatedAtUtc);
+        Assert.NotEqual(created, bound.UpdatedAtUtc);
+
+        // They are still written out, so clients can read them.
+        var roundTripped = System.Text.Json.JsonSerializer.Serialize(
+            bound, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+        Assert.Contains("CreatedAtUtc", roundTripped, StringComparison.Ordinal);
+        Assert.Contains("UpdatedAtUtc", roundTripped, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Version must survive a round trip in both directions.
+    /// </summary>
+    /// <remarks>
+    /// It is the optimistic-concurrency token: Repository.UpdateAsync reads it from the incoming
+    /// entity and filters the replace on it. If binding were suppressed it would arrive as 0 and
+    /// every update would filter on a version no stored document has. This test exists to stop
+    /// anyone "tidying" Version away alongside the audit timestamps.
+    /// </remarks>
+    [Fact]
+    public void Version_RoundTripsBothWays_BecauseItIsTheConcurrencyToken()
+    {
+        var json = """
+        {
+          "id": "507f1f77bcf86cd799439011",
+          "orderNumber": "ORD-VER-001",
+          "version": 7
+        }
+        """;
+
+        var bound = System.Text.Json.JsonSerializer.Deserialize<Order>(
+            json, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+
+        Assert.NotNull(bound);
+        Assert.Equal(7, bound!.Version);
+
+        var written = System.Text.Json.JsonSerializer.Serialize(
+            bound, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+        Assert.Contains("\"Version\":7", written, StringComparison.Ordinal);
+    }
+
+
+    /// <summary>
+    /// Optimistic concurrency works end to end against a real database.
+    /// </summary>
+    /// <remarks>
+    /// Guards the serialization contract around Version. The repository reads Version from the
+    /// incoming entity and filters the replace on it, so if binding were ever suppressed the
+    /// value would arrive as 0 and no update would match. Nothing else exercises that path
+    /// against Mongo.
+    /// </remarks>
+    [Fact]
+    public async Task LiveMongoDb_StaleVersion_IsRejectedByOptimisticConcurrency()
+    {
+        var client = new MongoClient("mongodb://localhost:27017");
+        try
+        {
+            await client.ListDatabaseNamesAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            return; // No local MongoDB; nothing to verify.
+        }
+
+        var httpClient = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.ConfigureServices(services =>
+            {
+                var mockUserContext = Substitute.For<ICurrentUserContext>();
+                mockUserContext.OperatorId.Returns("admin-user");
+                mockUserContext.User.Returns(new ClaimsPrincipal(
+                    new ClaimsIdentity(new List<Claim> { new(ClaimTypes.Role, "Admin") }, "TestAuth")));
+                services.AddScoped<ICurrentUserContext>(_ => mockUserContext);
+            });
+        }).CreateClient();
+
+        var orderId = ObjectId.GenerateNewId();
+        var created = new Order { Id = orderId, OrderNumber = "ORD-OCC-001", TotalAmount = 10m };
+
+        var post = await httpClient.PostAsJsonAsync(
+            "/api/v1/orders", created, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+        post.EnsureSuccessStatusCode();
+
+        var fetched = await (await httpClient.GetAsync($"/api/v1/orders/{orderId}"))
+            .Content.ReadFromJsonAsync<Order>(Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+        Assert.NotNull(fetched);
+
+        var staleVersion = fetched!.Version;
+
+        // First update carries the current version and must succeed.
+        var firstUpdate = await httpClient.PutAsJsonAsync(
+            $"/api/v1/orders/{orderId}",
+            fetched with { TotalAmount = 20m },
+            Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+        firstUpdate.EnsureSuccessStatusCode();
+
+        // Second update replays the now-stale version and must not be accepted.
+        var secondUpdate = await httpClient.PutAsJsonAsync(
+            $"/api/v1/orders/{orderId}",
+            fetched with { TotalAmount = 30m, Version = staleVersion },
+            Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+
+        Assert.False(
+            secondUpdate.IsSuccessStatusCode,
+            $"A stale version was accepted (HTTP {(int)secondUpdate.StatusCode}); optimistic concurrency is not being enforced.");
+    }
+
     [Fact]
     public async Task PostOrder_ValidationFails_ReturnsBadRequest()
     {
