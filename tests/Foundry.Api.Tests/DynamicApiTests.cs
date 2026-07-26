@@ -106,6 +106,84 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal("ORD-001", result[0].OrderNumber);
     }
 
+
+    /// <summary>
+    /// Soft-delete state is storage bookkeeping and must not appear in API responses.
+    /// </summary>
+    /// <remarks>
+    /// Asserted on the raw response body rather than a deserialised object, because a typed
+    /// read would silently ignore the extra fields this test exists to catch.
+    /// </remarks>
+    [Fact]
+    public async Task GetOrders_ResponseDoesNotLeakSoftDeleteState()
+    {
+        var mockRepo = Substitute.For<IRepository<Order>>();
+        var ordersList = new List<Order>
+        {
+            new() { Id = ObjectId.GenerateNewId(), OrderNumber = "ORD-SD-001", TotalAmount = 5m }
+        };
+
+        mockRepo.FindManyAsync(
+            Arg.Any<Expression<Func<Order, bool>>>(),
+            Arg.Any<string>(),
+            Arg.Any<SortOrder>(),
+            Arg.Any<int>(),
+            Arg.Any<MongoDB.Driver.IClientSessionHandle>(),
+            Arg.Any<CancellationToken>()
+        ).Returns(ordersList);
+
+        var mockUserContext = Substitute.For<ICurrentUserContext>();
+        mockUserContext.OperatorId.Returns("admin-user");
+        mockUserContext.User.Returns(new ClaimsPrincipal(
+            new ClaimsIdentity(new List<Claim> { new(ClaimTypes.Role, "Admin") }, "TestAuth")));
+
+        var client = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton<IRepository<Order>>(mockRepo);
+                services.AddScoped<ICurrentUserContext>(_ => mockUserContext);
+            });
+        }).CreateClient();
+
+        var response = await client.GetAsync("/api/v1/orders");
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.DoesNotContain("IsDeleted", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DeletedAt", body, StringComparison.OrdinalIgnoreCase);
+
+        // The payload is otherwise intact -- this is not passing because serialization broke.
+        Assert.Contains("ORD-SD-001", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A caller must not be able to set soft-delete state through the update route, which would
+    /// delete a record while bypassing whatever roles the manifest applies to DELETE.
+    /// </summary>
+    [Fact]
+    public void SoftDeleteMembers_AreNotBoundFromRequestBodies()
+    {
+        var json = """
+        {
+          "orderNumber": "ORD-SD-002",
+          "totalAmount": 10,
+          "isDeleted": true,
+          "deletedAt": "2020-01-01T00:00:00Z",
+          "id": "507f1f77bcf86cd799439011"
+        }
+        """;
+
+        var bound = System.Text.Json.JsonSerializer.Deserialize<Order>(
+            json, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
+
+        Assert.NotNull(bound);
+        Assert.Equal("ORD-SD-002", bound!.OrderNumber);
+        Assert.False(bound.IsDeleted);
+        Assert.Null(bound.DeletedAt);
+    }
+
     [Fact]
     public async Task PostOrder_ValidationFails_ReturnsBadRequest()
     {
