@@ -6,12 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MediatR;
 using FluentValidation;
-using FoundryMongo.DependencyInjection;
+using Foundry.Mongo.DependencyInjection;
 using Foundry.Core.Audit;
 using Foundry.Core.User;
 using Foundry.Api.Manifest;
 using Foundry.Api.Endpoints;
-using Foundry.Api.GraphQL;
 using Foundry.Api.Security;
 using Foundry.Api.Docs;
 using Foundry.Api.MediatR.Behaviors;
@@ -134,11 +133,11 @@ using (var scope = app.Services.CreateScope())
             var entityType = allTypes.FirstOrDefault(t => t.FullName?.Equals(entityTypeName, StringComparison.OrdinalIgnoreCase) == true);
             if (entityType != null)
             {
-                var repoType = typeof(FoundryMongo.Repositories.IRepository<>).MakeGenericType(entityType);
+                var repoType = typeof(Foundry.Mongo.Repositories.IRepository<>).MakeGenericType(entityType);
                 var repo = scope.ServiceProvider.GetService(repoType);
                 if (repo != null)
                 {
-                    var createIndexesMethod = repoType.GetMethod(nameof(FoundryMongo.Repositories.IRepository<Foundry.Core.Entities.IEntity<MongoDB.Bson.ObjectId>>.CreateIndexesAsync));
+                    var createIndexesMethod = repoType.GetMethod(nameof(Foundry.Mongo.Repositories.IRepository<Foundry.Core.Entities.IEntity<MongoDB.Bson.ObjectId>>.CreateIndexesAsync));
                     if (createIndexesMethod != null)
                     {
                         Console.WriteLine($"[Startup] Provisioning MongoDB indexes for: {ep.Entity}...");

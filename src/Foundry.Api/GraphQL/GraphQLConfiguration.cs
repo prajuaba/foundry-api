@@ -14,19 +14,26 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using System.Diagnostics.CodeAnalysis;
 using Foundry.Core.Entities;
-using FoundryMongo.Repositories;
+using Foundry.Mongo.Repositories;
 using Foundry.Api.Manifest;
 using Foundry.Api.MediatR;
 
-namespace Foundry.Api.GraphQL;
+namespace Microsoft.Extensions.DependencyInjection;
 
 public static class GraphQLConfiguration
 {
     [RequiresUnreferencedCode("Uses runtime reflection to register dynamic GraphQL schemas.")]
     [RequiresDynamicCode("Uses runtime dynamic code or generics.")]
-    public static IServiceCollection AddDynamicGraphQL(this IServiceCollection services, ApiManifest manifest)
+    public static IServiceCollection AddDynamicGraphQL(this IServiceCollection services, ApiManifest? manifest = null)
     {
-        if (manifest == null) return services;
+        if (manifest == null)
+        {
+            if (System.IO.File.Exists("api-manifest.json"))
+            {
+                var json = System.IO.File.ReadAllText("api-manifest.json");
+                manifest = System.Text.Json.JsonSerializer.Deserialize<ApiManifest>(json, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+        }
 
         var allTypes = AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a => {
@@ -35,19 +42,22 @@ public static class GraphQLConfiguration
             .ToList();
 
         var entityTypes = new List<Type>();
-        foreach (var config in manifest.Endpoints)
+        if (manifest?.Endpoints != null)
         {
-            var entityTypeName = $"{manifest.Namespace}.{config.Entity}";
-            var entityType = allTypes.FirstOrDefault(t => t.FullName?.Equals(entityTypeName, StringComparison.OrdinalIgnoreCase) == true);
-            if (entityType == null)
+            foreach (var config in manifest.Endpoints)
             {
-                entityType = allTypes.FirstOrDefault(t => t.Name.Equals(config.Entity, StringComparison.OrdinalIgnoreCase) == true 
-                    && typeof(IEntity<ObjectId>).IsAssignableFrom(t));
-            }
+                var entityTypeName = $"{manifest.Namespace}.{config.Entity}";
+                var entityType = allTypes.FirstOrDefault(t => t.FullName?.Equals(entityTypeName, StringComparison.OrdinalIgnoreCase) == true);
+                if (entityType == null)
+                {
+                    entityType = allTypes.FirstOrDefault(t => t.Name.Equals(config.Entity, StringComparison.OrdinalIgnoreCase) == true 
+                        && typeof(IEntity<ObjectId>).IsAssignableFrom(t));
+                }
 
-            if (entityType != null)
-            {
-                entityTypes.Add(entityType);
+                if (entityType != null)
+                {
+                    entityTypes.Add(entityType);
+                }
             }
         }
 

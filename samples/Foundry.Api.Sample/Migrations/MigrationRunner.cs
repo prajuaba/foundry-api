@@ -75,12 +75,14 @@ public class MigrationRunner
             
             await migration.UpAsync(_database, ct);
 
-            await history.InsertOneAsync(
+            await history.ReplaceOneAsync(
+                Builders<BsonDocument>.Filter.Eq("Version", migration.Version),
                 new BsonDocument
                 {
                     { "Version", migration.Version },
                     { "AppliedAt", DateTime.UtcNow }
                 },
+                new ReplaceOptions { IsUpsert = true },
                 cancellationToken: ct
             );
             

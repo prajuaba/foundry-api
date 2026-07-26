@@ -261,7 +261,7 @@ public static class DocsEndpoint
                 <div class=""entity-badges"">");
             
             if (isSoftDelete) sb.Append(@"<span class=""badge badge-softdelete"">SoftDelete</span>");
-            sb.Append(@"<span class=""badge badge-auditable"">Auditable</span>"); // Default true since FoundryMongo Repo audits mutations
+            sb.Append(@"<span class=""badge badge-auditable"">Auditable</span>"); // Default true since Foundry.Mongo Repo audits mutations
             if (isVersionable) sb.Append(@"<span class=""badge badge-versionable"">OCC Versionable</span>");
 
             sb.Append($@"

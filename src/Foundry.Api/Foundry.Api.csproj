@@ -26,10 +26,15 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Snappier" />
     <PackageReference Include="SharpCompress" />
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\foundry-mongo\src\FoundryMongo.csproj" />
+    <ProjectReference Include="..\..\..\foundry-mongo\src\Foundry.Mongo\Foundry.Mongo.csproj" />
   </ItemGroup>
 
 </Project>

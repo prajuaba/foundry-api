@@ -12,7 +12,7 @@ using Foundry.Rules;
 using Foundry.Api.Manifest;
 using Foundry.Core.User;
 using Foundry.Core.Entities;
-using FoundryMongo.Repositories;
+using Foundry.Mongo.Repositories;
 using Paperclip.OrderingSystem.Domain; // Target entity types
 
 namespace Foundry.Api.Tests;

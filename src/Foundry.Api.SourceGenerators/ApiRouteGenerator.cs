@@ -3,145 +3,218 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Foundry.Api.SourceGenerators
 {
+    /// <summary>
+    /// Generates MediatR registrations, minimal-API endpoint mappings and filter builders from
+    /// an <c>api-manifest.json</c> supplied as an AdditionalFile.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Implemented as an <see cref="IIncrementalGenerator"/> so the manifest is re-parsed only
+    /// when it actually changes. The previous <c>ISourceGenerator</c> re-ran the whole pipeline on
+    /// every compilation, which in an IDE means on every keystroke.
+    /// </para>
+    /// <para>
+    /// The manifest is parsed with <see cref="JsonDocument"/>. It was previously scanned with
+    /// <c>IndexOf</c> plus manual brace counting, which quietly mis-parses any manifest containing
+    /// a brace or bracket inside a string value — a route template such as <c>/orders/{id}</c> is
+    /// enough to desynchronise the scanner.
+    /// </para>
+    /// </remarks>
     [Generator]
-    public class ApiRouteGenerator : ISourceGenerator
+    public class ApiRouteGenerator : IIncrementalGenerator
     {
-        public void Initialize(GeneratorInitializationContext context)
+        private const string ManifestFileName = "api-manifest.json";
+
+        private static readonly DiagnosticDescriptor GeneratorFailure = new(
+            "FNDRYGEN001",
+            "Source generator failure",
+            "Failed to generate routes from manifest: {0}",
+            "Design",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor ManifestParseFailure = new(
+            "FNDRYGEN002",
+            "Malformed API manifest",
+            "api-manifest.json is not valid JSON and no endpoints were generated: {0}",
+            "Design",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        /// <inheritdoc />
+        public void Initialize(IncrementalGeneratorInitializationContext context)
         {
-            // No initialization needed for simple generators
+            // Only the manifest's text participates in the pipeline, so edits to ordinary source
+            // files do not invalidate the generated output.
+            var manifest = context.AdditionalTextsProvider
+                .Where(static file => file.Path.EndsWith(ManifestFileName, StringComparison.OrdinalIgnoreCase))
+                .Select(static (file, ct) => file.GetText(ct)?.ToString())
+                .Where(static text => !string.IsNullOrWhiteSpace(text))
+                .Collect();
+
+            var source = context.CompilationProvider.Combine(manifest);
+
+            context.RegisterSourceOutput(source, static (spc, pair) =>
+            {
+                var (compilation, manifests) = pair;
+                var json = manifests.FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(json)) return;
+
+                Emit(spc, compilation, json!);
+            });
         }
 
-        public void Execute(GeneratorExecutionContext context)
+        private static void Emit(SourceProductionContext context, Compilation compilation, string json)
         {
-            // Find additional files ending with api-manifest.json
-            var manifestFile = context.AdditionalFiles
-                .FirstOrDefault(f => f.Path.EndsWith("api-manifest.json", StringComparison.OrdinalIgnoreCase));
+            string ns;
+            List<GeneratedEndpoint> endpoints;
+            List<GeneratedCustomEndpoint> customEndpoints;
 
-            if (manifestFile == null)
+            try
             {
-                return;
+                using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true,
+                    CommentHandling = JsonCommentHandling.Skip
+                });
+
+                var root = document.RootElement;
+                ns = GetString(root, "Namespace") ?? "Domain";
+                endpoints = ReadEndpoints(root);
+                customEndpoints = ReadCustomEndpoints(root);
             }
-
-            var jsonText = manifestFile.GetText()?.ToString();
-            if (string.IsNullOrEmpty(jsonText))
+            catch (JsonException ex)
             {
+                context.ReportDiagnostic(Diagnostic.Create(ManifestParseFailure, Location.None, ex.Message));
                 return;
             }
 
             try
             {
-                var ns = ExtractValue(jsonText, "Namespace");
-                if (string.IsNullOrEmpty(ns)) ns = "Domain";
+                context.AddSource("GeneratedServices.g.cs",
+                    SourceText.From(GenerateServicesCode(ns, endpoints), Encoding.UTF8));
 
-                var endpoints = new List<GeneratedEndpoint>();
-                var customEndpoints = new List<GeneratedCustomEndpoint>();
+                context.AddSource("GeneratedEndpoints.g.cs",
+                    SourceText.From(GenerateEndpointsCode(ns, endpoints, customEndpoints), Encoding.UTF8));
 
-                // Parse standard Endpoints
-                var endpointsIndex = jsonText.IndexOf("\"Endpoints\"");
-                if (endpointsIndex != -1)
-                {
-                    int start = jsonText.IndexOf("[", endpointsIndex);
-                    if (start != -1)
-                    {
-                        int end = FindClosingBracket(jsonText, start, '[', ']');
-                        if (end != -1)
-                        {
-                            var arrayBlock = jsonText.Substring(start, end - start + 1);
-                            int scanIdx = 0;
-                            while (true)
-                            {
-                                int itemStart = arrayBlock.IndexOf("{", scanIdx);
-                                if (itemStart == -1) break;
-                                int itemEnd = FindClosingBracket(arrayBlock, itemStart, '{', '}');
-                                if (itemEnd == -1) break;
-
-                                var itemBlock = arrayBlock.Substring(itemStart, itemEnd - itemStart + 1);
-                                var entity = ExtractValue(itemBlock, "Entity");
-                                var route = ExtractValue(itemBlock, "Route");
-                                if (!string.IsNullOrEmpty(entity) && !string.IsNullOrEmpty(route))
-                                {
-                                    var methods = ExtractArrayValues(itemBlock, "Methods");
-                                    endpoints.Add(new GeneratedEndpoint { Entity = entity, Route = route, Methods = methods });
-                                }
-                                scanIdx = itemEnd + 1;
-                            }
-                        }
-                    }
-                }
-
-                // Parse custom Endpoints
-                var customIndex = jsonText.IndexOf("\"CustomEndpoints\"");
-                if (customIndex != -1)
-                {
-                    int start = jsonText.IndexOf("[", customIndex);
-                    if (start != -1)
-                    {
-                        int end = FindClosingBracket(jsonText, start, '[', ']');
-                        if (end != -1)
-                        {
-                            var arrayBlock = jsonText.Substring(start, end - start + 1);
-                            int scanIdx = 0;
-                            while (true)
-                            {
-                                int itemStart = arrayBlock.IndexOf("{", scanIdx);
-                                if (itemStart == -1) break;
-                                int itemEnd = FindClosingBracket(arrayBlock, itemStart, '{', '}');
-                                if (itemEnd == -1) break;
-
-                                var itemBlock = arrayBlock.Substring(itemStart, itemEnd - itemStart + 1);
-                                var route = ExtractValue(itemBlock, "Route");
-                                var method = ExtractValue(itemBlock, "Method");
-                                var requestType = ExtractValue(itemBlock, "RequestType");
-                                if (!string.IsNullOrEmpty(route) && !string.IsNullOrEmpty(method) && !string.IsNullOrEmpty(requestType))
-                                {
-                                    var roles = ExtractArrayValues(itemBlock, "Roles");
-                                    customEndpoints.Add(new GeneratedCustomEndpoint
-                                    {
-                                        Route = route,
-                                        Method = method,
-                                        RequestType = requestType,
-                                        Roles = roles
-                                    });
-                                }
-                                scanIdx = itemEnd + 1;
-                            }
-                        }
-                    }
-                }
-
-                // Generate MediatR closed generic DI registrations
-                var servicesCode = GenerateServicesCode(ns, endpoints);
-                context.AddSource("GeneratedServices.g.cs", SourceText.From(servicesCode, Encoding.UTF8));
-
-                // Generate static endpoint mappings
-                var endpointsCode = GenerateEndpointsCode(ns, endpoints, customEndpoints);
-                context.AddSource("GeneratedEndpoints.g.cs", SourceText.From(endpointsCode, Encoding.UTF8));
-
-                // Generate compile-time filter expression builders
-                var filterBuildersCode = GenerateFilterBuildersCode(context.Compilation, ns, endpoints);
-                context.AddSource("GeneratedFilterBuilders.g.cs", SourceText.From(filterBuildersCode, Encoding.UTF8));
+                context.AddSource("GeneratedFilterBuilders.g.cs",
+                    SourceText.From(GenerateFilterBuildersCode(compilation, ns, endpoints), Encoding.UTF8));
             }
             catch (Exception ex)
             {
-                // Emit build warning on generator failure
-                context.ReportDiagnostic(Diagnostic.Create(
-                    new DiagnosticDescriptor(
-                        "FNDRYGEN001",
-                        "Source Generator Failure",
-                        $"Failed to generate routes from manifest: {ex.Message}",
-                        "Design",
-                        DiagnosticSeverity.Warning,
-                        true),
-                    Location.None));
+                context.ReportDiagnostic(Diagnostic.Create(GeneratorFailure, Location.None, ex.Message));
             }
         }
 
-        private string GenerateServicesCode(string ns, List<GeneratedEndpoint> endpoints)
+        private static List<GeneratedEndpoint> ReadEndpoints(JsonElement root)
+        {
+            var results = new List<GeneratedEndpoint>();
+            if (!TryGetArray(root, "Endpoints", out var array)) return results;
+
+            foreach (var item in array.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+
+                var entity = GetString(item, "Entity");
+                var route = GetString(item, "Route");
+                if (string.IsNullOrEmpty(entity) || string.IsNullOrEmpty(route)) continue;
+
+                results.Add(new GeneratedEndpoint
+                {
+                    Entity = entity!,
+                    Route = route!,
+                    Methods = GetStringArray(item, "Methods")
+                });
+            }
+
+            return results;
+        }
+
+        private static List<GeneratedCustomEndpoint> ReadCustomEndpoints(JsonElement root)
+        {
+            var results = new List<GeneratedCustomEndpoint>();
+            if (!TryGetArray(root, "CustomEndpoints", out var array)) return results;
+
+            foreach (var item in array.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+
+                var route = GetString(item, "Route");
+                var method = GetString(item, "Method");
+                var requestType = GetString(item, "RequestType");
+
+                if (string.IsNullOrEmpty(route) || string.IsNullOrEmpty(method) || string.IsNullOrEmpty(requestType))
+                    continue;
+
+                results.Add(new GeneratedCustomEndpoint
+                {
+                    Route = route!,
+                    Method = method!,
+                    RequestType = requestType!,
+                    Roles = GetStringArray(item, "Roles")
+                });
+            }
+
+            return results;
+        }
+
+        private static bool TryGetArray(JsonElement element, string name, out JsonElement array)
+        {
+            if (element.ValueKind == JsonValueKind.Object
+                && element.TryGetProperty(name, out array)
+                && array.ValueKind == JsonValueKind.Array)
+            {
+                return true;
+            }
+
+            array = default;
+            return false;
+        }
+
+        private static string? GetString(JsonElement element, string name)
+            => element.ValueKind == JsonValueKind.Object
+               && element.TryGetProperty(name, out var value)
+               && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+
+        /// <summary>
+        /// Reads a string array, tolerating the object form used by manifest fields such as
+        /// <c>Roles</c>, where roles are keyed by HTTP method.
+        /// </summary>
+        private static List<string> GetStringArray(JsonElement element, string name)
+        {
+            var results = new List<string>();
+            if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out var value))
+                return results;
+
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.Array:
+                    foreach (var item in value.EnumerateArray())
+                        if (item.ValueKind == JsonValueKind.String)
+                            results.Add(item.GetString()!);
+                    break;
+
+                case JsonValueKind.Object:
+                    foreach (var property in value.EnumerateObject())
+                        foreach (var item in property.Value.EnumerateArray())
+                            if (item.ValueKind == JsonValueKind.String)
+                                results.Add(item.GetString()!);
+                    break;
+            }
+
+            return results;
+        }
+
+
+        private static string GenerateServicesCode(string ns, List<GeneratedEndpoint> endpoints)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#nullable enable");
@@ -179,7 +252,7 @@ namespace Foundry.Api.SourceGenerators
             return sb.ToString();
         }
 
-        private string GenerateEndpointsCode(string ns, List<GeneratedEndpoint> endpoints, List<GeneratedCustomEndpoint> customEndpoints)
+        private static string GenerateEndpointsCode(string ns, List<GeneratedEndpoint> endpoints, List<GeneratedCustomEndpoint> customEndpoints)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#nullable enable");
@@ -415,7 +488,7 @@ namespace Foundry.Api.SourceGenerators
             return list;
         }
 
-    private string GenerateFilterBuildersCode(Compilation compilation, string ns, List<GeneratedEndpoint> endpoints)
+    private static string GenerateFilterBuildersCode(Compilation compilation, string ns, List<GeneratedEndpoint> endpoints)
     {
         var sb = new StringBuilder();
         sb.AppendLine("#nullable enable");

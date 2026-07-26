@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using MongoDB.Bson;
-using FoundryMongo.Repositories;
+using Foundry.Mongo.Repositories;
 using Foundry.Core.Entities;
 using Foundry.Core.Paging;
 

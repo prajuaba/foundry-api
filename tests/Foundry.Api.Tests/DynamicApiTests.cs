@@ -19,7 +19,7 @@ using Foundry.Core.Entities;
 using Foundry.Core.Search;
 using Foundry.Core.Paging;
 using Foundry.Core.User;
-using FoundryMongo.Repositories;
+using Foundry.Mongo.Repositories;
 using Paperclip.OrderingSystem.Domain;
 
 namespace Foundry.Api.Tests;
