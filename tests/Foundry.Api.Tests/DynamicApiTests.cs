@@ -100,7 +100,7 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
 
         // Assert
         response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<List<Order>>();
+        var result = await response.Content.ReadFromJsonAsync<List<Order>>(Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         Assert.NotNull(result);
         Assert.Single(result);
         Assert.Equal("ORD-001", result[0].OrderNumber);
@@ -136,7 +136,7 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
         };
 
         // Act
-        var response = await client.PostAsJsonAsync("/api/v1/orders", invalidOrder);
+        var response = await client.PostAsJsonAsync("/api/v1/orders", invalidOrder, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -172,7 +172,7 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
         };
 
         // Act
-        var response = await client.PostAsJsonAsync("/api/v1/orders", order);
+        var response = await client.PostAsJsonAsync("/api/v1/orders", order, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -210,20 +210,20 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
         // 1. First GET request - Cache Miss
         var response1 = await client.GetAsync($"/api/v1/orders/{orderId}");
         response1.EnsureSuccessStatusCode();
-        var result1 = await response1.Content.ReadFromJsonAsync<Order>();
+        var result1 = await response1.Content.ReadFromJsonAsync<Order>(Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         Assert.NotNull(result1);
 
         // 2. Second GET request - Cache Hit (Repository should not be called again)
         var response2 = await client.GetAsync($"/api/v1/orders/{orderId}");
         response2.EnsureSuccessStatusCode();
-        var result2 = await response2.Content.ReadFromJsonAsync<Order>();
+        var result2 = await response2.Content.ReadFromJsonAsync<Order>(Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         Assert.NotNull(result2);
 
         // Verify repository GetByIdAsync was called exactly ONCE
         await mockRepo.Received(1).GetByIdAsync(orderId, Arg.Any<MongoDB.Driver.IClientSessionHandle>(), Arg.Any<CancellationToken>());
 
         // 3. Perform Mutation (PUT update) which should invalidate cache
-        var putResponse = await client.PutAsJsonAsync($"/api/v1/orders/{orderId}", order);
+        var putResponse = await client.PutAsJsonAsync($"/api/v1/orders/{orderId}", order, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         putResponse.EnsureSuccessStatusCode();
 
         // 4. Third GET request - Cache Evicted, should hit Repository again (called twice total)
@@ -274,13 +274,13 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
             TotalAmount = 250.0m
         };
 
-        var postResponse = await httpClient.PostAsJsonAsync("/api/v1/orders", order);
+        var postResponse = await httpClient.PostAsJsonAsync("/api/v1/orders", order, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         postResponse.EnsureSuccessStatusCode();
 
         // 4. Test GET order (retrieve)
         var getResponse = await httpClient.GetAsync($"/api/v1/orders/{orderId}");
         getResponse.EnsureSuccessStatusCode();
-        var retrieved = await getResponse.Content.ReadFromJsonAsync<Order>();
+        var retrieved = await getResponse.Content.ReadFromJsonAsync<Order>(Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         Assert.NotNull(retrieved);
         Assert.Equal("ORD-LIVE-001", retrieved.OrderNumber);
 
@@ -334,7 +334,7 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
         );
 
         // 2. Perform Mutation (PUT update) which should invalidate cache in both L1 and L2
-        var putResponse = await httpClient.PutAsJsonAsync($"/api/v1/orders/{orderId}", order);
+        var putResponse = await httpClient.PutAsJsonAsync($"/api/v1/orders/{orderId}", order, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         putResponse.EnsureSuccessStatusCode();
 
         // Verify IDistributedCache.RemoveAsync was called to evict key from L2 cache
@@ -401,11 +401,11 @@ public class DynamicApiTests : IClassFixture<WebApplicationFactory<Program>>
         var payload = new { CustomerId = "cust-1", ItemIds = new List<string> { "item-1", "item-2" } };
 
         // Act - Call custom POST endpoint
-        var response = await httpClient.PostAsJsonAsync("/api/v1/orders/checkout", payload);
+        var response = await httpClient.PostAsJsonAsync("/api/v1/orders/checkout", payload, Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         response.EnsureSuccessStatusCode();
 
         // Assert
-        var result = await response.Content.ReadFromJsonAsync<Paperclip.OrderingSystem.Domain.PlaceOrderResult>();
+        var result = await response.Content.ReadFromJsonAsync<Paperclip.OrderingSystem.Domain.PlaceOrderResult>(Foundry.Core.Serialization.FoundryJsonDefaults.Options);
         Assert.NotNull(result);
         Assert.Equal("ORD-12345", result.OrderId);
         Assert.Equal("Processed", result.Status);

@@ -291,7 +291,7 @@ namespace Foundry.Api.SourceGenerators
                         sb.AppendLine($"                var command = new InsertCommand<{fullEntityType}>(entity);");
                         sb.AppendLine("                var result = await sender.Send(command, context.RequestAborted);");
                         sb.AppendLine($"                context.Response.Headers.Location = \"{ep.Route}/\" + ((dynamic)result).Id;");
-                        sb.AppendLine($"                return Results.Text(JsonSerializer.Serialize(result), \"application/json\", statusCode: 201);");
+                        sb.AppendLine($"                return Results.Text(JsonSerializer.Serialize(result, Foundry.Core.Serialization.FoundryJsonDefaults.Options), \"application/json\", statusCode: 201);");
                         sb.AppendLine("            });");
                         sb.AppendLine($"            ConfigureMetadata(builderPost, config_{ep.Entity}, \"POST\", typeof({fullEntityType}), 201);");
                     }
@@ -303,7 +303,7 @@ namespace Foundry.Api.SourceGenerators
                         sb.AppendLine("                var updatedEntity = entity with { Id = objectId };");
                         sb.AppendLine($"                var command = new UpdateCommand<{fullEntityType}>(updatedEntity);");
                         sb.AppendLine("                var result = await sender.Send(command, context.RequestAborted);");
-                        sb.AppendLine($"                return Results.Text(JsonSerializer.Serialize(result), \"application/json\", statusCode: 200);");
+                        sb.AppendLine($"                return Results.Text(JsonSerializer.Serialize(result, Foundry.Core.Serialization.FoundryJsonDefaults.Options), \"application/json\", statusCode: 200);");
                         sb.AppendLine("            });");
                         sb.AppendLine($"            ConfigureMetadata(builderPut, config_{ep.Entity}, \"PUT\", typeof({fullEntityType}), 200);");
                     }
@@ -325,7 +325,7 @@ namespace Foundry.Api.SourceGenerators
                         sb.AppendLine("                if (!ObjectId.TryParse(id, out var objectId)) return Results.BadRequest(\"Invalid ObjectId.\");");
                         sb.AppendLine($"                var query = new GetByIdQuery<{fullEntityType}>(objectId);");
                         sb.AppendLine("                var result = await sender.Send(query, context.RequestAborted);");
-                        sb.AppendLine("                return result != null ? Results.Text(JsonSerializer.Serialize(result), \"application/json\") : Results.NotFound();");
+                        sb.AppendLine("                return result != null ? Results.Text(JsonSerializer.Serialize(result, Foundry.Core.Serialization.FoundryJsonDefaults.Options), \"application/json\") : Results.NotFound();");
                         sb.AppendLine("            });");
                         sb.AppendLine($"            ConfigureMetadata(builderGetId, config_{ep.Entity}, \"GET_BY_ID\", typeof({fullEntityType}), 200);");
                     }
@@ -353,7 +353,7 @@ namespace Foundry.Api.SourceGenerators
                         sb.AppendLine($"                var filterExpr = GeneratedFilterBuilders.BuildFilterExpression<{fullEntityType}>(context) ?? DynamicEndpointRouteBuilder.BuildFilterExpression<{fullEntityType}>(context);");
                         sb.AppendLine($"                var query = new FindManyQuery<{fullEntityType}>(filterExpr, sortBy, sortOrder, limit, criteria);");
                         sb.AppendLine("                var result = await sender.Send(query, context.RequestAborted);");
-                        sb.AppendLine("                return Results.Text(JsonSerializer.Serialize(result), \"application/json\");");
+                        sb.AppendLine("                return Results.Text(JsonSerializer.Serialize(result, Foundry.Core.Serialization.FoundryJsonDefaults.Options), \"application/json\");");
                         sb.AppendLine("            });");
                         sb.AppendLine($"            ConfigureMetadata(builderGet, config_{ep.Entity}, \"GET\", typeof({fullEntityType}), 200);");
                     }
@@ -372,7 +372,7 @@ namespace Foundry.Api.SourceGenerators
                     sb.AppendLine($"                var command = new {ns}.{customEp.RequestType}();");
                     sb.AppendLine("                var result = await sender.Send(command, context.RequestAborted);");
                     sb.AppendLine("                if (result == null) return Results.NoContent();");
-                    sb.AppendLine("                return Results.Text(JsonSerializer.Serialize(result), \"application/json\");");
+                    sb.AppendLine("                return Results.Text(JsonSerializer.Serialize(result, Foundry.Core.Serialization.FoundryJsonDefaults.Options), \"application/json\");");
                     sb.AppendLine("            });");
                 }
                 else
@@ -381,7 +381,7 @@ namespace Foundry.Api.SourceGenerators
                     sb.AppendLine("            {");
                     sb.AppendLine("                var result = await sender.Send(command, context.RequestAborted);");
                     sb.AppendLine("                if (result == null) return Results.NoContent();");
-                    sb.AppendLine("                return Results.Text(JsonSerializer.Serialize(result), \"application/json\");");
+                    sb.AppendLine("                return Results.Text(JsonSerializer.Serialize(result, Foundry.Core.Serialization.FoundryJsonDefaults.Options), \"application/json\");");
                     sb.AppendLine("            });");
                 }
 
